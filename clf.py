@@ -6,29 +6,35 @@ from typing import Optional, List
 import asyncio
 
 from time import time
+from datetime import datetime
 
-from example import dialogue
-from secrets import openai_api_key
+# from example import dialogue2
+from pilot_processing import messages, Message
+
+from secret import openai_api_key
 
 
-critique_sys_msg = """
-대화 내역의 사람들은 "피임약은 권장되어야 한다"를 주제로 채팅방에서 토론을 하고 있어. 
-주어진 이전 채팅 기록을 바탕으로 target 메세지가 주장인지, 특정 주장에 동의하는 말인지, 둘 다 아닌지 분류해.
+clf_sys_msg = """
+[대화 내역]의 사람들은 어떤 직원을 승진시켜야 할지 채팅방에서 토론을 하고 있어. 
+[Target] 메세지가 특정 직원을 승진시켜야 한다는 주장인지 아닌지 분류해.
 
-주장은 1, 특정 주장에 동의하는 말 2, 둘다 아니면 0으로 분류해.
+특정 직원을 승진시켜야 한다는 주장은 1, 아니면 0으로 분류해.
 e.g.
 1
 """
 
 
-def create_critique_msg(part: List):
 
+
+def create_critique_msg(part: List, last_chat: str):
+    br = "\n"
     return [
-        {"role": "system", "content": critique_sys_msg},
+        {"role": "system", "content": clf_sys_msg},
+        {"role": "system", "content": f"[Target]: {last_chat}\n"},
         {"role": "user", "content": f"""
          대화자수: 4\n
         [대화내역]\n
-     {"\n".join(part)}
+     {br.join(part)}
 """}
     ]
 
@@ -39,7 +45,7 @@ async def run_gpt(model: str, messages, temp: float):
     response = await client.chat.completions.create(
         model=model,
         messages=messages,
-        temperature=temp
+        temperature=temp,
     )
 
     choices = response.choices
@@ -50,19 +56,32 @@ async def run_gpt(model: str, messages, temp: float):
         return None
 
 
-async def test(chatend: int):
-    cr_init_time = time()
+async def test(chatend: int, elapsed):
+    clf_init_time = time()
+    last_message = messages[chatend]
 
-    part = dialogue[:chatend + 1]
+    if last_message.elapsed_time > elapsed:
+      await asyncio.sleep((msg.elapsed_time - elapsed).seconds)
 
-    msgs = create_critique_msg(part=part)
+    part = map(lambda x: x.message, messages[:chatend + 1])
+
+    msgs = create_critique_msg(part=part, last_chat=last_message.message)
+    print(msgs)
     answer = await run_gpt(model="gpt-4o", messages=msgs, temp=0.0)
-    cr_completion_time = time() - cr_init_time
-    elapsed = round(cr_completion_time, 3)
+    clf_completion_time = time() - clf_init_time
+    elapsed = round(clf_completion_time, 3)
 
-    print(f"{answer}, {elapsed}, {dialogue[chatend]}")
+    print(f"{answer}, {elapsed}, {messages[chatend]}")
 
 
-for i in range(0, len(dialogue)):
-  asyncio.run(test(i))
+start = datetime.now()
+
+for i in range(0, len(messages)):
+  msg = messages[i]
+  if msg.message.startswith("DEVIL:"):
+    continue
+  
+  elapsed = datetime.now() - start
+
+  asyncio.run(test(i, elapsed))
 

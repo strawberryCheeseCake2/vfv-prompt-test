@@ -7,113 +7,117 @@ import asyncio
 
 from time import time
 
-from example import dialogue
-from secrets import openai_api_key
+# from example import dialogue
+from pilot_processing import chat_history
+from secret import openai_api_key
 
-critique_sys_msg = """
-대화 내역의 사람들은 "피임약은 권장되어야 한다"를 주제로 토론을 하고 있어. 
-너는 악마의 대변인이야. 
-대화 내역을 바탕으로 찬성측의 말에서 다시 생각해봐야 할 점을 상기시켜줘
+
+cr_sys_msg = """
+대화 내역의 사람들은 [직원 리스트]의 직원 중 어떤 직원을 승진시켜야 할지 채팅방에서 토론을 하고 있어. 
+너는 Socratic Questioning을 통해 사람들이 다시 생각해보아야 할 점을 상기시켜 주는 악마의 대변인이야.
+[Target]에 해당하는 입장에서 다시 생각해봐야 할 점을 알려줘.
+
 말할 때는 처음에 공감을 해준 후에 "~도 생각해보면 어떨까요?"식으로 부드럽게  2-3 문장이내로 말해
+이미 언급한 비판을 반복하지말고 똑같은 표현을 반복하지마. 대화 내역에서 언급된 내용도 반복하지마.
 
-이미 언급한 비판을 반복하지말고 똑같은 표현을 반복하지마. 대화 내역에서 언급된 내용도 반복하지마. 두번이상 반복된 근거에 비판할 떄는 다른 건 아무것도 입력하지말고 ...만 입력해
+[Target]
+토론 참가자 4명 중 2명 이상이 지지하는 입장
 """
 
-clf_sys_msg = """
-대화 내역의 사람들은 "피임약은 권장되어야 한다"를 주제로 채팅방에서 토론을 하고 있어. 
-target 메세지가 주장인지, 특정 주장에 동의하는 말인지, 둘 다 아닌지 분류해.
-
-주장은 1, 특정 주장에 동의하는 말 2, 둘다 아니면 0으로 분류해.
-e.g.
-1
+emp_info = """
+[직원 리스트]
+프로필 1
+(부서:영업 및 마케팅
+학력: 석사 이상
+올해 이수한 교육 횟수: 1회 (평균 점수: 49/100)
+나이: 35세
+성별: 여성
+전년도 성과 평가: 5점 만점에 5점
+근무 기간: 8년
+수상 경력: 없음),
+프로필 2(
+부서: 운영
+학력: 학사
+올해 이수한 교육 횟수: 1회 (평균 점수: 60/100)
+나이: 30세
+성별: 남성
+전년도 평가: 5점 만점에 3점
+근무 기간: 7년
+수상 경력: 없음),
+프로필 3(
+부서: 기술
+학력: 학사
+올해 이수한 교육 횟수: 1회 (평균 점수: 73/100)
+나이: 45세
+성별: 남성
+전년도 평가: 5점 만점에 3점
+근무 기간: 2년
+수상 경력: 없음),
+프로필 4(
+부서: 분석
+학력: 학사
+올해 이수한 교육 횟수: 2회 (평균 점수: 85/100)
+나이: 31세
+성별: 남성
+전년도 평가: 5점 만점에 3점
+근무 기간: 7년
+수상 경력: 없음),
+프로필 5(
+부서: 연구 및 개발
+학력: 석사 이상
+올해 이수한 교육 횟수: 1회 (평균 점수: 84/100)
+나이: 37세
+성별: 남성
+전년도 성과 평가: 5점 만점에 3점
+근무 기간: 7년
+수상 경력: 없음)
 """
-
-invoke_indices = [14, 21, 31]
-selected = invoke_indices[0]
 
 client = AsyncOpenAI(api_key=openai_api_key)
 
 
 def create_critique_msg(part: List):
-
+    br = "\n"
     return [
-        {"role": "system", "content": critique_sys_msg},
-        {"role": "user", "content": f"""
-         대화자수: 4
-        [대화내역]\n
-     {"\n".join(part)}
-"""}
-    ]
-
-def create_clf_msg(part: List, last_chat):
-    
-    print(f"Last Chat: {last_chat}")
-    print()
-    return [
-        {"role": "system", "content": clf_sys_msg},
-        {"role": "user", "content": f"target: {last_chat}"},
+        {"role": "system", "content": cr_sys_msg},
+        {"role": "user", "content": emp_info},
         {"role": "user", "content": f"""
         [대화내역]\n
-     {"\n".join(part)}
-"""}
+     {br.join(part)}
+      """},
+      {"role": "user", "content": "2-3문장으로 짧게 답해"}
     ]
 
-async def get_critique_stream(messages):
-    stream = await client.chat.completions.create(
+
+async def get_critique(messages, stream: bool = False):
+    res = await client.chat.completions.create(
             model="gpt-4o",
             messages=messages,
-            stream=True,
+            stream=stream,
+            max_tokens=256,
+            temperature=1.1
         )
 
-    return stream
+    return res
     
-
-async def test(target_index):
+async def request_response(last_index):
     
-    part = dialogue[:target_index + 1]
-    last_chat = part[-1]
-    # print(last_chat)
+    part = map(lambda x: x.message, chat_history[:last_index + 1])
+    _start_time = time()
+
+    openai_messages = create_critique_msg(part=part)
+    result = await get_critique(messages=openai_messages)
+
+    print(f"Index: {last_index}")
+    print(f"Elapsed: {time() - _start_time}")
+    print(f"Critique Result: {result.choices[0].message.content}")
+    return
 
 
-    cl_init_time = time()
-
-    clf_res = await client.chat.completions.create(
-        model="gpt-4o",
-        messages=create_clf_msg(part=part, last_chat=last_chat)
-    )
-    clf = clf_res.choices[0].message.content
-    cl_elapsed_time = time() - cl_init_time
-    print(f"clf_result: {clf}")
-    print(f"cl_elapsed_time: {cl_elapsed_time}")
-    print()
-    cr_init_time = time()
-    critique_msg = create_critique_msg(part=part)
-    critique_stream = await get_critique_stream(messages=critique_msg)
-
-    isFirstChunk = True
-    completion_buffer = ""
-    time_to_first_token = 0.0
+async def test():
+    for idx, history in enumerate(chat_history):
+        if history.message.startswith("DEVIL:"):
+          await request_response(last_index=idx - 1)
 
 
-    async for chunk in critique_stream:
-        chunk_content = chunk.choices[0].delta.content
-        if chunk_content is not None:
-            
-            completion_buffer += chunk_content
-
-            if isFirstChunk:
-                isFirstChunk = False
-                time_to_first_token = time() - cr_init_time
-
-    print(f"Time to First Token: {time_to_first_token}")
-    print(f"Critique Result: {completion_buffer}")
-    print()    
-
-
-
-async def loop_test():
-    for idx in invoke_indices:
-        await test(idx)
-
-
-asyncio.run(loop_test())
+asyncio.run(test())

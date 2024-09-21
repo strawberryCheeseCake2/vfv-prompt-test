@@ -1,3 +1,6 @@
 secrets.py
 secret.py
 .env
+users.csv
+secretDms.csv
+messages.csv
