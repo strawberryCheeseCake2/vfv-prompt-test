@@ -13,6 +13,7 @@ class Message:
         self.message = message
         self.sent_time = sent_time
         self.elapsed_time = sent_time - first_message_time
+        self.first_message_time = first_message_time
     
     def __repr__(self):
         return f'Message(message="{self.message}", sent_time="{self.sent_time}", elapsed_time={self.elapsed_time})'
